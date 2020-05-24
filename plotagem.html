@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Desenhe o gráfico de uma função de uma variável</title>
+        <style>
+            h1, h2 {
+                font-weight: normal;
+            }
+
+            #codigo {
+                min-width: 513px;
+                min-height: 120px;
+            }
+
+            canvas {
+                border: 1px solid black;
+            }
+
+            #erro-js-in, #erro-escala-in {
+                background-color: #FF8080;
+                text-color: red;
+                border: 1px solid red;
+                border-radius: 8px;
+                padding: 5px;
+            }
+
+            #plotar {
+                border: 1px solid black;
+                border-radius: 16px;
+                padding: 5px;
+                padding-left: 12px;
+                padding-right: 12px;
+                font-weight: bold;
+                background-color: #80ff80;
+            }
+
+            input[type=number] {
+                min-width: 200px;
+            }
+        </style>
+        <script type="text/javascript" src="./bignumber.js"></script>
+        <script type="text/javascript">
+            function desenhar() {
+                function toPixel(valor, minF, maxF, totalPixels) {
+                    // (valor - minF) * totalPixels / (maxF - minF)
+                    return BigNumber(1).times(valor).minus(minF).times(totalPixels).div(maxF.minus(minF)).toNumber();
+                }
+
+                function toValue(pixel, minF, maxF, totalPixels) {
+                    // pixel * (maxF - minF) / totalPixels + minF
+                    return BigNumber(1).times(pixel).times(maxF.minus(minF)).div(totalPixels).plus(minF).toNumber();
+                }
+
+                function melhorArredondamento(x) {
+                    let p = 0;
+                    while (x.gt(10)) {
+                       x = x.div(10);
+                       p++;
+                    }
+                    while (x.lt(1)) {
+                       x = x.times(10);
+                       p--;
+                    }
+                    return x.idiv(1).times(10 ** p);
+                }
+
+                function linhas(escala, minF, maxF) {
+                    let ffa = minF.div(escala).idiv(1).times(escala);
+                    let ffb = maxF.div(escala).idiv(1).times(escala);
+                    let r = [];
+                    for (let i = ffa; i.lte(ffb); i = i.plus(escala)) {
+                        r.push(i);
+                    }
+                    return r;
+                }
+
+                function normalizar(x, escala) {
+                    return x.isZero() ? "0" : (x.isPositive() ? "+" : "") + x.toString();
+                }
+
+                function clamp(min, value, max) {
+                    return Math.min(Math.max(value, min), max);
+                }
+
+                function limparArea(canvas) {
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = "#FFFFFF";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+
+                function desenharArea(minX, maxX, minY, maxY, canvas, func) {
+                    const w = canvas.width;
+                    const h = canvas.height;
+                    const ctx = canvas.getContext('2d');
+
+                    // Limpa o canvas.
+                    ctx.fillStyle = "#FFFFFF";
+                    ctx.fillRect(0, 0, w, h);
+
+                    ctx.font = "12px Arial";
+                    ctx.lineCap = "square";
+
+                    // Desenha as linhas verticais e escolhe qual é a que corresponde ao eixo Y.
+                    let ix = -1;
+                    let ex = melhorArredondamento(maxX.minus(minX).div(10));
+                    let lv = linhas(ex, minX, maxX);
+                    for (let vv in lv) {
+                        let px = toPixel(lv[vv], minX, maxX, w);
+                        if (px < 0 || px > w) continue;
+                        ctx.beginPath();
+                        if (lv[vv].isZero()) {
+                            ix = vv;
+                            ctx.strokeStyle = "#FF0000";
+                            ctx.lineWidth = 2;
+                        } else {
+                            ctx.strokeStyle = "#008000";
+                            ctx.lineWidth = 1;
+                        }
+                        ctx.moveTo(px + 0.5, 0);
+                        ctx.lineTo(px + 0.5, h);
+                        ctx.stroke();
+                    }
+                    ix = ix !== -1 ? toPixel(lv[ix], minX, maxX, w) : minX.isPositive() ? 0 : w;
+
+                    // Desenha as linhas horizontais e escolhe qual é a que corresponde ao eixo X.
+                    let iy = -1;
+                    let ey = melhorArredondamento(maxY.minus(minY).div(10));
+                    let lh = linhas(ey, minY, maxY);
+                    for (let hh in lh) {
+                        let py = h - 1 - toPixel(lh[hh], minY, maxY, h);
+                        if (py < 0 || py > h) continue;
+                        ctx.beginPath();
+                        if (lh[hh].isZero()) {
+                            iy = hh;
+                            ctx.strokeStyle = "#FF0000";
+                            ctx.lineWidth = 2;
+                        } else {
+                            ctx.strokeStyle = "#008000";
+                            ctx.lineWidth = 1;
+                        }
+                        ctx.moveTo(0, py + 0.5);
+                        ctx.lineTo(w, py + 0.5);
+                        ctx.stroke();
+                    }
+                    iy = h - 1 - (iy !== -1 ? toPixel(lh[iy], minY, maxY, h) : minY.isPositive() ? 0 : h);
+
+                    // Desenha os números do eixo X.
+                    ctx.fillStyle = "#000000";
+                    let lx = -99999;
+                    for (let vv in lv) {
+                        let b = lv[vv];
+                        let t = normalizar(b, ex);
+                        let px = toPixel(b, minX, maxX, w);
+                        if (px < 0 || px > w) continue;
+                        let m = ctx.measureText(t);
+                        px = clamp(0, px, w - m.width);
+                        if (px < lx) continue;
+                        lx = px + m.width;
+                        ctx.fillText(t, px, clamp(10, iy - 1, h));
+                    }
+
+                    // Desenha os números do eixo Y.
+                    for (let hh in lh) {
+                        let b = lh[hh];
+                        let t = normalizar(b, ey);
+                        let py = h - 1 - toPixel(b, minY, maxY, h);
+                        if (py < 0 || py > h) continue;
+                        let m = ctx.measureText(t);
+                        py = clamp(10, py - 1, h);
+                        ctx.fillText(t, clamp(0, ix, w - m.width), py);
+                    }
+
+                    // Plota o gráfico propriamente dito.
+                    ctx.strokeStyle = "#4040FF";
+                    ctx.lineWidth = 2;
+                    ctx.lineCap = "round";
+                    ctx.beginPath();
+                    let ly = undefined;
+                    for (let px = 0; px < w; px++) {
+                        let fx = toValue(px, minX, maxX, w);
+                        let fy = func(fx);
+                        if (typeof(fy) === "undefined") {
+                            ly = undefined;
+                        } else {
+                            let py = h - 1 - toPixel(fy, minY, maxY, h);
+                            if (typeof(ly) === "undefined" || ly === 1./0 || ly === -1./0) {
+                                ctx.fillRect(px, py, 1, 1);
+                            } else {
+                                ctx.moveTo(px - 0.5, ly + 0.5);
+                                ctx.lineTo(px + 0.5, py + 0.5);
+                            }
+                            if (fy == 0) console.log((px + 0.5) + "," + (py + 0.5));
+                            ly = py;
+                        }
+                    }
+
+                    ctx.stroke();
+                }
+
+                function avaliar() {
+                    const fx = document.getElementById('codigo').value;
+                    const ffx = "(" + fx + ")";
+                    try {
+                        return eval(ffx);
+                    } catch (z) {
+                        throw new Error("Erro na função JavaScript: " + z);
+                    }
+                }
+
+                function desenharIn() {
+                    let canvas = document.getElementById('plotagem');
+                    let f, minX, minY, maxY, maxX;
+                    let erroJs = document.getElementById("erro-js");
+                    let erroEscala = document.getElementById("erro-escala");
+                    erroJs.style.display = "none";
+                    erroEscala.style.display = "none";
+
+                    try {
+                        f = avaliar();
+                    } catch (x) {
+                        erroJs.style.display = "";
+                        document.getElementById("erro-js-in").innerHTML = x.message;
+                        limparArea(canvas);
+                        return;
+                    }
+
+                    try {
+                        minX = BigNumber(document.getElementById("minx").value);
+                        maxX = BigNumber(document.getElementById("maxx").value);
+                        minY = BigNumber(document.getElementById("miny").value);
+                        maxY = BigNumber(document.getElementById("maxy").value);
+                        if (minX.isNaN()) throw new Error("O valor mínimo do X não é um número válido.");
+                        if (maxX.isNaN()) throw new Error("O valor máximo do X não é um número válido.");
+                        if (minY.isNaN()) throw new Error("O valor mínimo do Y não é um número válido.");
+                        if (maxY.isNaN()) throw new Error("O valor máximo do Y não é um número válido.");
+                        if (minX.eq(maxX)) throw new Error("O valor mínimo do X não pode ser igual ao valor máximo. Tem que ser menor.");
+                        if (minX.gt(maxX)) throw new Error("O valor mínimo do X deve ser menor que o valor máximo.");
+                        if (minY.eq(maxY)) throw new Error("O valor mínimo do Y não pode ser igual ao valor máximo. Tem que ser menor.");
+                        if (minY.gt(maxY)) throw new Error("O valor mínimo do Y deve ser menor que o valor máximo.");
+                    } catch (x) {
+                        erroEscala.style.display = "";
+                        document.getElementById("erro-escala-in").innerHTML = x.message;
+                        limparArea(canvas);
+                        return;
+                    }
+
+                    desenharArea(minX, maxX, minY, maxY, canvas, f);
+                }
+
+                desenharIn();
+            }
+        </script>
+    </head>
+    <body>
+        <h1>Plote uma função de uma variável</h1>
+        <h2>1. Digite o código da sua função em JavaScript na caixa abaixo</h2>
+
+        <textarea id="codigo">function codigoLegal(x) {
+    let y = Math.sin(x * 5) + x ** 2 / 50 - 2;
+    return y;
+}</textarea>
+        <p id="erro-js" style="display: none"><span id="erro-js-in"></span></p>
+        <h2>2. Ajuste as escalas</h2>
+        <label for="minx">X mínimo: </label><input id="minx" type="number" step="any" value="-22" />
+        <label for="maxx">X máximo: </label><input id="maxx" type="number" step="any" value="22" />
+        <br>
+        <label for="miny">Y mínimo: </label><input id="miny" type="number" step="any" value="-22" />
+        <label for="maxy">Y máximo: </label><input id="maxy" type="number" step="any" value="22" />
+        <p id="erro-escala" style="display: none"><span id="erro-escala-in"></span></p>
+        <h2>3. Clique no botão abaixo</h2>
+        <p><button id="plotar" type="button" onclick="javascript:desenhar();">Plotar</button></p>
+        <h2>4. Veja o resultado da plotagem</h2>
+        <canvas id="plotagem" width="513" height="513"></canvas>
+    </body>
+</html>
